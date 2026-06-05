@@ -10,6 +10,14 @@ Digital simulation of a compute-in-memory (CIM) matmul accelerator with a
 > as such (see `py/energy_model.py`). Every reported number comes from a test
 > that actually ran — commands and raw output are reproducible below.
 
+## Honest scorecard (what these tests do and do NOT prove)
+| # | Claim tested | Verdict from the actual run |
+|---|---|---|
+| 1 | Bit-serial/bit-sliced CIM == exact integer matmul | **PROVEN** bit-exact (1632/1632). Digital equivalence only — no analog/timing/area. |
+| 2 | Linear TD readout beats ADC at transformer precision | **MIXED, honest:** TD *matches* ADC accuracy bit-for-bit (only jitter costs ~1 bit) and is ~10×–95× cheaper in *readout* energy. But **neither hits 1–2% raw** — gain mismatch floors ~1.6%; needs calibration. Drift hits both equally (fair model). |
+| 3 | Cheap detector predicts FFN sparsity, saves compute | **WORKS w/ caveats:** contextual sparsity is real & low-rank predictable (recall→0.87); detector matches oracle at rank 32 and is cheaper than skipped compute up to r≈32–64. Synthetic task, not an LLM; structureless inputs failed. |
+| 4 | Where does per-token energy go; do 1–3 help | **PROVEN decomposition:** movement = 99.4% (computed). CIM = 11.9×. But **KV cache becomes the bottleneck**, so pieces 2–3 barely move the *system* total at long context — they matter at short context / after KV is fixed. |
+
 ## Motivation
 The dominant cost of local LLM inference is **data movement (~98% of energy)**,
 not arithmetic. CIM attacks this by computing where weights are stored. CIM's
@@ -29,7 +37,8 @@ claimed beyond that framing.
    readout vs amplitude ADC, head-to-head with non-idealities. ✅ *built & passing.*
 3. **`py/sparse_mlp.py`** — detect-then-fire-sparse MLP (numpy; torch
    unavailable). ✅ *built & passing.*
-4. Per-token energy model (numpy). *todo*
+4. **`py/energy_model.py`** — per-token energy decomposition + optimization
+   lever analysis. ✅ *built & passing.*
 
 ## Toolchain (verified in this environment)
 - Icarus Verilog 12.0 (`iverilog`/`vvp`)
@@ -41,6 +50,7 @@ claimed beyond that framing.
 make p1          # piece 1: CIM MAC tile self-check
 make p2          # piece 2: TD-vs-ADC numpy comparison + TD readout RTL self-check
 make p3          # piece 3: detect-then-fire-sparse MLP (trains in numpy, ~1 min)
+make p4          # piece 4: per-token energy decomposition + optimization levers
 ```
 
 ### Piece 1 — measured result
@@ -115,3 +125,23 @@ ppl=16), mean fire fraction 0.39.
   sparsity needs contextual structure, which we built in deliberately. Whether
   real-transformer fire-fractions are this predictable is **not proven here**
   (Deja Vu reports they are, in trained LLMs).
+
+### Piece 4 — measured result & honest read
+`py/energy_model.py` decomposes per-token decode energy (7B-like, INT8) into
+weight-movement / KV-cache / readout / compute with labeled constants, and
+*computes* (not asserts) where energy goes:
+
+- **The "movement, not math" claim, measured:** for batch=1 decode, data
+  movement (weights+KV) = **99.38%** of per-token energy; compute = 0.62%.
+- **Stack savings (S=2048):** S1 conventional 234 mJ → **CIM (S2) 19.7 mJ
+  (11.9×)**, removing weight movement. TD readout (S3) cuts readout 9.7×
+  (36→3.8 µJ) but that's ~0.2% of the total here, so **system total barely
+  moves**. Sparse FFN (S4) adds 1.06×. Full stack S1→S4 = **12.6×**.
+- **The honest punchline (answers "how do we optimize"):** once CIM kills
+  weight movement, **KV-cache movement is the bottleneck** (92.6% of S4 at
+  S=2048, 98.9% at S=32768). The novel readout/sparsity pieces only surface
+  *after* KV is addressed. The model shows the lever order: **CIM → KV
+  (GQA + KV-quant + on-chip: up to ~48× more at S=8192) → then compute, where
+  piece-3 sparsity and piece-2 readout finally matter.** GQA/KV-quant are
+  standard, not novel here — the contribution is showing they're the right
+  next lever and the regime (short context / post-KV) where pieces 2–3 pay off.
