@@ -43,5 +43,38 @@ python3 train.py --mode B --iters 1000
 python3 compare.py
 ```
 
-## Results & verdict
-*(filled in from the real run; see commit/output.)*
+## Results & verdict (measured)
+
+Models trained to: **A dense ppl 4.054**, **B dense ppl 4.363 (+7.6%)**.
+Detectors compared at matched capacity (rank-16 = "cheap"); full-rank shown for
+reference. All sparse-inference ppl on identical held-out val chunks.
+
+### Run 1 (regularizers lpred=0.3, lconc=0.1, lbal=0.02) — NOT a win
+fire=0.25 (k=256/1024):
+
+| model | oracle | router (r16) | bolt-on r16 | bolt-on full | static | random | top-k overlap |
+|---|---|---|---|---|---|---|---|
+| A baseline | 4.062 | 13.76* | 10.42 | **4.14** | 14.23 | 13.78 | 0.178 |
+| B codesign | 4.462 | **7.20** | 11.71 | 4.86 | 10.93 | 14.59 | **0.662** |
+
+\*A's router is untrained (random) — A's cheap detector is the rank-16 bolt-on.
+
+**Findings:**
+1. **Cheap detectors fail on a normal model:** on A, the rank-16 bolt-on is far
+   from oracle (10.4 vs 4.06); only the *expensive* full-rank detector works
+   (4.14). So the premise holds for cheap mechanisms.
+2. **Co-design gave a real but partial detector gain:** B's co-trained rank-16
+   router (7.20) beats a post-hoc rank-16 bolt-on on B (11.71) and beats static
+   (10.93); at 50% fire B-router (4.56) ≈ oracle (4.36).
+3. **But it FAILS the guardrails:** B is +7.6% worse, and its firing collapsed
+   toward input-INDEPENDENT — top-k overlap **0.66 vs A's 0.18** (chance 0.25),
+   the degenerate mode that disqualifies a win. And at the target 25% fire,
+   B-router (7.20) still doesn't reach B-oracle (4.46).
+
+**Verdict (run 1): NOT a co-design win** — worse model + degenerate
+input-dependence; the cheap router beat the simple `static` baseline only by
+making the model fire nearly the same neurons every token. The degeneracy
+points at the load-balance term being too weak.
+
+### Run 2 (stronger balance lbal=0.3, lconc=0.05) — testing if the fix helps
+*(pending; tests whether predictable + input-dependent + quality can coexist.)*
