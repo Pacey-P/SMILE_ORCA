@@ -9,3 +9,4 @@ kv/ckpt/*.bin
 kv/ckpt/*.pt
 kv/ckpt/*.log
 results/*.npy
+codesign/ckpt/*.pt
