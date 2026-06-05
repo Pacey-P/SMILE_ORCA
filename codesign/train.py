@@ -63,6 +63,7 @@ def main():
     ap.add_argument("--det_rank", type=int, default=32)
     ap.add_argument("--lsp", type=float, default=1e-3)   # sparsity weight (B)
     ap.add_argument("--lpr", type=float, default=0.1)    # predictability weight (B)
+    ap.add_argument("--reg_warmup", type=int, default=0) # ramp reg 0->full over N iters (keep LM primary early)
     ap.add_argument("--eval_every", type=int, default=250)
     ap.add_argument("--seed", type=int, default=1337)
     args = ap.parse_args()
@@ -93,7 +94,8 @@ def main():
         if codesign:
             _, lm_loss, aux = model(x, y, collect=True)
             lsp, lpr, fire = codesign_terms(aux)
-            loss = lm_loss + args.lsp * lsp + args.lpr * lpr
+            rw = 1.0 if args.reg_warmup <= 0 else min(1.0, it/args.reg_warmup)
+            loss = lm_loss + rw * args.lsp * lsp + rw * args.lpr * lpr
         else:
             _, lm_loss = model(x, y); loss = lm_loss
         opt.zero_grad(set_to_none=True); loss.backward()
