@@ -41,17 +41,17 @@ def codesign_terms(aux, eps=1e-6):
 
 
 @torch.no_grad()
-def estimate_loss(model, data, block, bs, device, gen, iters=20):
+def estimate_loss(model, data, block, bs, device, gen, iters=20, sparse_k=None):
     model.eval(); losses = []
     for _ in range(iters):
         x, y = get_batch(data, block, bs, device, gen)
-        _, loss = model(x, y); losses.append(loss.item())
+        _, loss = model(x, y, sparse_k=sparse_k); losses.append(loss.item())
     model.train(); return float(np.mean(losses))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["baseline", "codesign"], required=True)
+    ap.add_argument("--mode", choices=["baseline", "codesign", "codesign_topk"], required=True)
     ap.add_argument("--tag", default=None)
     ap.add_argument("--iters", type=int, default=1500)
     ap.add_argument("--block", type=int, default=256)
@@ -64,6 +64,8 @@ def main():
     ap.add_argument("--lsp", type=float, default=1e-3)   # sparsity weight (B)
     ap.add_argument("--lpr", type=float, default=0.1)    # predictability weight (B)
     ap.add_argument("--reg_warmup", type=int, default=0) # ramp reg 0->full over N iters (keep LM primary early)
+    ap.add_argument("--fire_k", type=int, default=128)   # codesign_topk: neurons fired/token in the loop
+    ap.add_argument("--sparse_warmup", type=int, default=400) # codesign_topk: dense iters before going sparse
     ap.add_argument("--eval_every", type=int, default=250)
     ap.add_argument("--seed", type=int, default=1337)
     args = ap.parse_args()
@@ -75,7 +77,8 @@ def main():
     vgen = torch.Generator().manual_seed(99)  # fixed val sampling for comparability
 
     tr, va = get_split("train"), get_split("val")
-    codesign = (args.mode == "codesign")
+    topk = (args.mode == "codesign_topk")
+    codesign = (args.mode in ("codesign", "codesign_topk"))
     cfg = Config(block=args.block, n_layer=args.n_layer, n_head=args.n_head,
                  n_embd=args.n_embd, codesign=codesign, det_rank=args.det_rank)
     model = GPT(cfg).to(device)
@@ -91,7 +94,13 @@ def main():
     for it in range(1, args.iters+1):
         for g in opt.param_groups: g["lr"] = args.lr * min(1.0, it/100)
         x, y = get_batch(tr, args.block, args.bs, device, gen)
-        if codesign:
+        if topk:
+            # dense warmup (learn language + predictor), then fire predicted top-k in the loop
+            sk = args.fire_k if it > args.sparse_warmup else None
+            _, lm_loss, aux = model(x, y, collect=True, sparse_k=sk)
+            lsp, lpr, fire = codesign_terms(aux)
+            loss = lm_loss + args.lpr * lpr          # hard top-k enforces count sparsity; no L1
+        elif codesign:
             _, lm_loss, aux = model(x, y, collect=True)
             lsp, lpr, fire = codesign_terms(aux)
             rw = 1.0 if args.reg_warmup <= 0 else min(1.0, it/args.reg_warmup)
@@ -105,14 +114,22 @@ def main():
             vl = estimate_loss(model, va, args.block, args.bs, device, vgen, iters=20)
             dt = time.time()-t0
             extra = ""
-            if codesign:
+            # checkpoint metric: for topk, the sparse operating point is what matters
+            sel_loss = vl
+            if topk:
+                vls = estimate_loss(model, va, args.block, args.bs, device, vgen,
+                                    iters=20, sparse_k=args.fire_k)
+                sel_loss = vls
+                extra = (f" | SPARSE@{args.fire_k} val {vls:.4f} (ppl {math.exp(vls):.2f}) "
+                         f"| lm {lm_loss.item():.3f} Lpr {lpr.item():.3f} fire {fire.item():.3f}")
+            elif codesign:
                 extra = (f" | lm {lm_loss.item():.3f} Lsp {lsp.item():.3f} "
                          f"Lpr {lpr.item():.3f} fire {fire.item():.3f}")
             print(f"  it {it:5d} | val {vl:.4f} (ppl {math.exp(vl):6.2f}, "
                   f"bpb {vl/math.log(2):.3f}) | {dt:.0f}s "
                   f"{it*args.bs*args.block/dt/1e3:.0f}k tok/s{extra}")
-            if vl < best:
-                best = vl
+            if sel_loss < best:
+                best = sel_loss
                 torch.save({"model": model.state_dict(), "cfg": vars(cfg),
                             "val_loss": vl, "args": vars(args)},
                            os.path.join(CK, f"{tag}.pt"))

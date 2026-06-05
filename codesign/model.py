@@ -47,6 +47,16 @@ def apply_rope(x, cos, sin):
     return out
 
 
+def _topk_mask(score, k):
+    H = score.shape[-1]
+    if k is None or k >= H:
+        return torch.ones_like(score)
+    idx = torch.topk(score, k, dim=-1).indices
+    m = torch.zeros_like(score)
+    m.scatter_(-1, idx, 1.0)
+    return m
+
+
 class MLP(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -63,15 +73,21 @@ class MLP(nn.Module):
         # cheap rank-r prediction of the firing/importance pattern from x
         return self.det_B(self.det_A(x))
 
-    def forward(self, x, selector=None, li=None, collect=False):
-        h = F.relu(self.fc(x))                          # (B,T,H) post-ReLU = importance
+    def forward(self, x, selector=None, li=None, collect=False, sparse_k=None):
+        h_full = F.relu(self.fc(x))                     # (B,T,H) post-ReLU = importance
         s_hat = self.predict(x) if self.codesign else None
-        if selector is not None:
-            mask = selector(x, h, li)                    # (B,T,H) {0,1}
-            h = h * mask
+        h = h_full
+        if sparse_k is not None and self.codesign:
+            # co-design "train-in-the-loop": fire only the predictor's top-k neurons,
+            # so the model learns to be good under cheap-predicted sparse firing.
+            mask = _topk_mask(s_hat.detach(), sparse_k)
+            h = h_full * mask
+        elif selector is not None:
+            mask = selector(x, h_full, li)               # (B,T,H) {0,1}
+            h = h_full * mask
         y = self.proj(h)
         if collect:
-            return y, (x, h, s_hat)
+            return y, (x, h_full, s_hat)                 # h_full = pre-mask true importance
         return y
 
 
@@ -93,13 +109,13 @@ class Block(nn.Module):
         y = y.transpose(1,2).contiguous().view(B, T, C)
         return self.c_proj(y)
 
-    def forward(self, x, cos, sin, selector, li, collect):
+    def forward(self, x, cos, sin, selector, li, collect, sparse_k=None):
         x = x + self.attn(self.ln1(x), cos, sin)
         if collect:
-            y, aux = self.mlp(self.ln2(x), selector, li, collect=True)
+            y, aux = self.mlp(self.ln2(x), selector, li, collect=True, sparse_k=sparse_k)
             x = x + y
             return x, aux
-        x = x + self.mlp(self.ln2(x), selector, li)
+        x = x + self.mlp(self.ln2(x), selector, li, sparse_k=sparse_k)
         return x, None
 
 
@@ -121,14 +137,14 @@ class GPT(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.normal_(m.weight, 0.0, 0.02)
 
-    def forward(self, idx, targets=None, selector=None, collect=False):
+    def forward(self, idx, targets=None, selector=None, collect=False, sparse_k=None):
         B, T = idx.shape
         hd = self.cfg.n_embd // self.cfg.n_head
         cos, sin = rope_tables(T, hd, idx.device)
         x = self.tok(idx)
         aux = []
         for li, blk in enumerate(self.blocks):
-            x, a = blk(x, cos, sin, selector, li, collect)
+            x, a = blk(x, cos, sin, selector, li, collect, sparse_k=sparse_k)
             if collect: aux.append(a)
         x = self.lnf(x)
         logits = self.head(x)
