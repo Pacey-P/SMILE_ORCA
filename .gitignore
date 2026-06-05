@@ -1,0 +1,5 @@
+sim/*.vvp
+sim/*.vcd
+__pycache__/
+*.pyc
+results/*.png
