@@ -34,5 +34,13 @@ p3:
 p4:
 	python3 py/energy_model.py
 
+# ---- Ternary CIM tile (add/sub/skip) + few-bit readout --------------------
+ternary: $(SIM)/tb_ternary.vvp
+	$(VVP) $<
+	python3 py/energy_ternary.py
+
+$(SIM)/tb_ternary.vvp: rtl/ternary_mac_tile.v rtl/ternary_readout.v tb/tb_ternary.v
+	$(IV) -o $@ $^
+
 clean:
 	rm -f $(SIM)/*.vvp $(SIM)/*.vcd
