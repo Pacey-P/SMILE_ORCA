@@ -10,3 +10,4 @@ kv/ckpt/*.pt
 kv/ckpt/*.log
 results/*.npy
 codesign/ckpt/*.pt
+kvtriage/ckpt/*.pt
