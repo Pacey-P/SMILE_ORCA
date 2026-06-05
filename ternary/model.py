@@ -35,6 +35,23 @@ class BitLinear(nn.Module):
         self.bias=nn.Parameter(torch.zeros(outf)) if bias else None
         self.readout_bits=None
         self.capture=False; self.last_P=None
+        # readout config: ro_step (fixed per-col; else oracle), global, drift, dual-slope
+        self.ro_step=None; self.ro_global=False; self.ro_drift=0.0; self.ro_dual=False
+    def _readout(self,P):
+        bits=self.readout_bits
+        if bits is None or bits>=16: return P
+        outf=P.shape[-1]; qmax=(1<<(bits-1))-1
+        if self.ro_step is not None:                       # FIXED calibrated step
+            step=self.ro_step.to(P.device)
+        elif self.ro_global:                               # one shared range (whole tensor)
+            step=(P.detach().abs().max()/qmax).clamp_min(1e-9).repeat(outf)
+        else:                                              # ORACLE per-column (in-sample)
+            step=(P.detach().abs().reshape(-1,outf).amax(0)/qmax).clamp_min(1e-9)
+        step=step.view(*([1]*(P.dim()-1)),outf)
+        eff=step if self.ro_dual else step*(1.0+self.ro_drift)   # dual-slope cancels drift
+        code=torch.round(P/eff).clamp(-qmax-1,qmax)
+        Pq=code*step                                       # digital side uses nominal step
+        return P+(Pq-P).detach()
     def forward(self,x):
         # 8-bit activation (per-token absmax)
         xs=x.detach().abs().amax(-1,keepdim=True).clamp_min(1e-5)/127.0
@@ -45,7 +62,7 @@ class BitLinear(nn.Module):
         # CIM partial sum (int8 activations x ternary weights) -- what the ADC reads
         P = xq @ wq.t()
         if self.capture: self.last_P=P.detach()
-        P = readout_quant(P, self.readout_bits)
+        P = self._readout(P)
         y = P * xs * ws
         if self.bias is not None: y=y+self.bias
         return y
@@ -92,6 +109,33 @@ class GPT(nn.Module):
     def set_capture(self,on):
         for m in self.modules():
             if isinstance(m,BitLinear): m.capture=on
+    def config_readout(self,bits=None,mode="oracle",drift=0.0,dual=False):
+        """mode: 'oracle' (per-col in-sample) | 'global' (one shared range) |
+        'fixed' (use pre-calibrated ro_step from calibrate_steps)."""
+        for m in self.modules():
+            if isinstance(m,BitLinear):
+                m.readout_bits=bits; m.ro_drift=drift; m.ro_dual=dual
+                m.ro_global=(mode=="global")
+                if mode!="fixed": m.ro_step=None
+    @torch.no_grad()
+    def calibrate_steps(self,Xcal,bits,headroom=1.0):
+        """Fix per-column readout step from calibration data (per-column |P|max
+        * headroom / qmax). headroom<1 under-ranges (clips), >1 over-ranges."""
+        qmax=(1<<(bits-1))-1
+        self.set_capture(True)
+        acc={}
+        for i in range(Xcal.shape[0]):
+            self.config_readout(bits=None)          # capture raw P (no readout)
+            self(Xcal[i:i+1])
+            for nm,m in self.named_modules():
+                if isinstance(m,BitLinear) and m.last_P is not None:
+                    a=m.last_P.abs().reshape(-1,m.last_P.shape[-1]).amax(0)
+                    acc[nm]=a if nm not in acc else torch.maximum(acc[nm],a)
+        self.set_capture(False)
+        for nm,m in self.named_modules():
+            if isinstance(m,BitLinear) and nm in acc:
+                m.ro_step=(acc[nm]*headroom/qmax).clamp_min(1e-9)
+                m.readout_bits=bits
     def forward(self,idx,targets=None):
         B,T=idx.shape; hd=self.cfg.n_embd//self.cfg.n_head
         cos,sin=rope_tables(T,hd,idx.device); x=self.tok(idx)
