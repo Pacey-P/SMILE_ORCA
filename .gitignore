@@ -3,3 +3,9 @@ sim/*.vcd
 __pycache__/
 *.pyc
 results/*.png
+
+# KV study artifacts (large/regenerable)
+kv/ckpt/*.bin
+kv/ckpt/*.pt
+kv/ckpt/*.log
+results/*.npy
