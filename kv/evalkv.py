@@ -8,8 +8,9 @@ from model import GPT, Config
 
 HERE = os.path.dirname(__file__); CK = os.path.join(HERE, "ckpt")
 
-def load_model():
-    ckpt = torch.load(os.path.join(CK, "model.pt"), map_location="cpu", weights_only=False)
+def load_model(path=None):
+    path = path or os.environ.get("KV_MODEL_PATH") or os.path.join(CK, "model.pt")
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
     cfg = Config(**ckpt["cfg"]); model = GPT(cfg); model.load_state_dict(ckpt["model"])
     model.eval(); return model, ckpt["cfg"], ckpt.get("val_loss")
 

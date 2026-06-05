@@ -37,6 +37,7 @@ def main():
     ap.add_argument("--n_head", type=int, default=4)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--eval_every", type=int, default=500)
+    ap.add_argument("--out", type=str, default=os.path.join(CK,"model.pt"))
     args = ap.parse_args()
 
     device = "cpu"
@@ -68,7 +69,7 @@ def main():
             if vl < best:
                 best = vl
                 torch.save({"model": model.state_dict(), "cfg": vars(cfg),
-                            "val_loss": vl}, os.path.join(CK, "model.pt"))
+                            "val_loss": vl}, args.out)
     print(f"DONE in {time.time()-t0:.0f}s | best val loss {best:.4f} "
           f"(ppl {math.exp(best):.2f}, bpb {best/math.log(2):.3f}) -> ckpt/model.pt")
 

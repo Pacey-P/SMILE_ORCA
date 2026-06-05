@@ -21,6 +21,7 @@ import policies as KP   # reuse quant_dequant, E_DRAM_BYTE
 torch.set_num_threads(4)
 HERE=os.path.dirname(__file__); CK=os.path.join(HERE,"ckpt")
 RES=os.path.join(HERE,"..","results"); os.makedirs(RES,exist_ok=True)
+TAG=os.environ.get("KV_TAG","4h")
 NEG=float("-inf"); SINK=4; MB=1024*1024
 
 # ---- per-head windowed (optionally quantized) attention -------------------
@@ -81,7 +82,7 @@ def chunks(d,T,n,seed):
 
 def main():
     model,cfg,vl=load_model(); T=cfg["block"]; L=cfg["n_layer"]; nh=cfg["n_head"]
-    prof=torch.load(os.path.join(CK,"head_profile.pt"),weights_only=False)
+    prof=torch.load(os.path.join(CK,f"head_profile_{TAG}.pt"),weights_only=False)
     loc=prof["loc"]; Wrefs=prof["Wrefs"]
     d=val_data(); Xe,Ye=chunks(d,T,16,seed=0)
     full=ppl(model,Xe,Ye,KP.attend_full)
@@ -133,7 +134,7 @@ def main():
         print("=> head-aware triage WINS (better ppl-per-byte than uniform).")
     else:
         print("=> NOT a clear win: head-aware triage ~ uniform. Honest non-win.")
-    np.save(os.path.join(RES,"kvtriage.npy"),
+    np.save(os.path.join(RES,f"kvtriage_{TAG}.npy"),
             np.array({"tri16":tri16,"uni16":uni16,"tri4":tri4,"uni4":uni4,"full":full,"b16":b16},dtype=object),
             allow_pickle=True)
 
@@ -191,7 +192,7 @@ def main():
         ax.axhline(full,ls="--",color="k",lw=0.8,label="fp16 full ceiling")
         ax.set_xlabel("KV memory (MB)"); ax.set_ylabel("held-out perplexity")
         ax.set_title("Head-aware KV triage vs uniform (+4bit, out-of-sample)")
-        ax.legend(); fig.tight_layout(); fig.savefig(os.path.join(RES,"kvtriage_pareto.png"),dpi=110)
+        ax.legend(); fig.tight_layout(); fig.savefig(os.path.join(RES,f"kvtriage_pareto_{TAG}.png"),dpi=110)
         print("  [plot] results/kvtriage_pareto.png")
     except Exception as e:
         print("  (plot skipped:",e,")")

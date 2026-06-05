@@ -15,6 +15,7 @@ from evalkv import load_model, val_data
 
 torch.set_num_threads(4)
 HERE=os.path.dirname(__file__); CK=os.path.join(HERE,"ckpt"); os.makedirs(CK,exist_ok=True)
+TAG=os.environ.get("KV_TAG","4h")
 
 @torch.no_grad()
 def profile(model, data, T=512, nseq=24, Wrefs=(16,32,64,128,256), seed=3):
@@ -79,7 +80,7 @@ def main():
         print("  exploit at this scale. (Honest: idea likely dead here.)")
     else:
         print("VERDICT: heads ARE heterogeneous -> head-aware triage has something to exploit.")
-    torch.save({"loc":{w:loc[w] for w in Wrefs},"Wrefs":list(Wrefs)}, os.path.join(CK,"head_profile.pt"))
+    torch.save({"loc":{w:loc[w] for w in Wrefs},"Wrefs":list(Wrefs)}, os.path.join(CK,f"head_profile_{TAG}.pt"))
     print(f"saved -> {CK}/head_profile.pt")
 
 if __name__=="__main__":
