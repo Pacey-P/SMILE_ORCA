@@ -78,8 +78,47 @@ fewer than a generic CIM ADC (~7–8b) → ~8–16× ADC-energy saving, composin
 the time-domain readout. The single activation-datapath result this project
 found that is both positive AND scales.
 
+## Hardening (does the readout finding survive non-idealities?) — both PASS
+
+### Calibration robustness (`calibration.py`)
+R\*=5 was measured with an *oracle* per-column range. Realistic hardware fixes
+the range offline. Held-out ppl (ideal=3.954, target ≤4.033):
+
+| R=5 | oracle | fixed-train | global | 0.9× | 1.25× |
+|---|---|---|---|---|---|
+| ppl | 3.958 | **3.952** | 4.148 | 3.932 | 3.997 |
+
+- **Fixed per-column calibration on TRAIN ≈ oracle** → R\*=5 does *not* depend on
+  oracle calibration; a buildable train-calibrated range works.
+- **Robust to ±25% range error** (0.9× and 1.25× both pass; mild under-ranging
+  even helps — finer LSB on the body of the distribution).
+- **Global single-range** (cheapest hardware) costs ~1 bit (needs R=6).
+
+### Dual-slope drift immunity (`drift.py`, `rtl/dualslope_readout.v`)
+Single-slope step = ramp-current × clock, which drifts with supply/temp.
+Dual-slope is ratiometric → drift cancels. Held-out ppl under injected drift:
+
+| drift | single-slope | dual-slope |
+|---|---|---|
+| −10% | 4.197 | 3.952 |
+| 0% | 3.952 | 3.952 |
+| +10% | 4.077 | 3.952 |
+
+**single-slope ppl spread = 0.249; dual-slope spread = 0.000.** Dual-slope
+cancels drift that costs single-slope up to +6% ppl at ±10%. RTL verified
+(`tb_dualslope` 124/124 == floor(N1·|P|/ref)). Plot: `../results/ternary_drift.png`.
+
+> **Honest caveat:** the behavioral model makes the cancellation *exact* (drift =
+> one factor common to both phases), so spread=0.000 is the idealized first-order
+> result. Real dual-slope cancels the dominant clock/ramp drift but has
+> second-order residuals (integrator leakage, dielectric absorption), and costs
+> ~2× latency. The ±10% drift magnitude is an assumption.
+
 ## Reproduce
 ```
 python3 train.py --iters 1000     # ternary GPT from scratch (~14 min CPU)
 python3 readout.py                # zero-fraction, concentration, readout sweep
+python3 scaling.py                # concentration & R* vs fan-in (needs d128/d512)
+python3 calibration.py            # readout calibration robustness
+python3 drift.py                  # single- vs dual-slope under drift
 ```
