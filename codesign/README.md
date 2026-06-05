@@ -76,5 +76,51 @@ input-dependence; the cheap router beat the simple `static` baseline only by
 making the model fire nearly the same neurons every token. The degeneracy
 points at the load-balance term being too weak.
 
-### Run 2 (stronger balance lbal=0.3, lconc=0.05) — testing if the fix helps
-*(pending; tests whether predictable + input-dependent + quality can coexist.)*
+### Run 2 (stronger balance lbal=0.3, lconc=0.05) — STILL NOT a win
+B dense ppl now **4.634 (+14.3% vs A)**. fire=0.25 (k=256/1024):
+
+| model | dense | oracle | router (r16) | bolt-on r16 | bolt-on full | static | top-k overlap |
+|---|---|---|---|---|---|---|---|
+| A baseline | 4.054 | **4.062** | 13.76* | 10.42 | **4.14** | 14.23 | 0.178 |
+| B codesign | 4.634 | 6.623 | 9.36 | 13.60 | 7.08 | 19.37 | 0.184 |
+
+**Findings:**
+1. Stronger balance **fixed the degeneracy**: B top-k overlap 0.184 ≈ A's 0.178
+   (input-dependent again, usage-entropy 6.89/6.93). Good.
+2. **But it BACKFIRED on sparsity and quality.** B dense is now +14.3% worse,
+   and — critically — **B's oracle@25% = 6.623 ≫ dense 4.634**: forcing usage to
+   spread made the model need MORE neurons per token, so top-25% firing (even
+   with perfect detection) loses 43%. Co-design made B *less* amenable to
+   sparse firing, the opposite of the goal.
+3. The cheap router still never reaches oracle (9.36 vs 6.62).
+
+## OVERALL VERDICT: co-design did NOT beat the baselines (clean negative)
+
+The decisive context is **model A itself**: its MLP is *already* near-losslessly
+sparse — **oracle@25% fire = 4.062 ≈ dense 4.054**. The model's sparsity was
+never the problem. The only gap is *cheap predictability*: a rank-16 detector
+fails on A (10.42), while a **full-rank bolt-on captures it almost perfectly
+(4.14)** with zero retraining — that is the practical winner.
+
+Co-design tried to make the sparsity cheaply predictable. It failed in a
+fundamental, measured way: forcing predictable+sparse+input-dependent created a
+trilemma — relax balance → **degenerate firing** (run 1, overlap 0.66); enforce
+balance → **importance spreads, model becomes less sparse-friendly and worse**
+(run 2, oracle@25% 6.62, +14.3% ppl). In BOTH runs the cheap router never
+reached its own oracle, and B was a worse model. The one genuine co-design
+effect — a co-trained cheap router beats a post-hoc cheap bolt-on of equal
+capacity (run1 7.2<11.7; run2 9.4<13.6) — is far too small to matter: it loses
+to simply bolting a full-rank detector onto the normal model.
+
+**Answer to the hypothesis:** No — training the model to be predictable did NOT
+let a cheap mechanism win where bolt-on lost. The baselines win. The honest
+takeaway: for MLP sparsity here, the model is already sparse; spend capacity on
+a *bigger detector* on a normal model, not on a co-design regularizer that
+fights itself.
+
+**Caveats (scope):** one regularizer-based co-design formulation (the kind
+suggested); a different scheme (e.g., MoE-style hard routing with
+straight-through gates trained in-loop) might behave differently. Small 3.3M
+byte-level model, context 128, CPU. The *relative* conclusions (A already
+sparse; full-rank bolt-on wins; this co-design self-defeats) are the robust
+findings.
