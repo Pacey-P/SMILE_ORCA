@@ -9,3 +9,7 @@ kv/ckpt/*.bin
 kv/ckpt/*.pt
 kv/ckpt/*.log
 results/*.npy
+
+# co-design study artifacts (large/regenerable)
+codesign/data/*.bin
+codesign/ckpt/*.pt
