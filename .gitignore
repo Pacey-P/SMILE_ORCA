@@ -11,3 +11,4 @@ kv/ckpt/*.log
 results/*.npy
 codesign/ckpt/*.pt
 kvtriage/ckpt/*.pt
+ternary/ckpt/*.pt
