@@ -66,6 +66,25 @@ which may be a small-model artifact; real LLMs have many retrieval heads. The
 (Ada-KV / PyramidKV / Razor-Attention); the *magnitude* is not proven at scale.
 Digital simulation, not silicon; energy constants are assumptions.
 
+## Head-count scaling test (`scale_compare.py`) — does the win grow with heads?
+Same recipe on three same-size models (d=256) with 4, 8, 16 heads/layer
+(head_dim 64/32/16), trained from scratch. Sensitivity-triage vs matched-memory
+uniform (+4bit), out-of-sample, 8 eval chunks:
+
+| heads (×4 layers) | full ppl | sens. max/median | triage wins | mean Δ | max Δ |
+|---|---|---|---|---|---|
+| 4 (16) | 6.110 | 7.7× | 6/6 | +1.28% | +1.78% |
+| 8 (32) | 5.065 | 5.2× | 4/6 | +0.28% | +1.21% |
+| 16 (64) | 5.246 | 16.0× | 5/6 | +1.49% | +2.52% |
+
+**Honest read:** the win **persists** across head counts (positive mean at all
+three; majority of budget points) — so it is **not** a pure few-heads artifact.
+But it does **not** cleanly grow with heads (8h dips, 16h rebounds strongest);
+the cross-model variation is comparable to the ~1–1.5% effect size, and this
+sweep used only 8 chunks (noisier). Verdict: **a small (~1–2%), robust,
+positive effect with no clean scaling law at this scale.** Bigger / many-head
+models on real text would be needed to claim a trend.
+
 ## Files / reproduce
 ```
 python3 profile.py     # per-head locality; confirms heterogeneity
