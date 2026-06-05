@@ -4,8 +4,8 @@ IV    = iverilog -g2005
 VVP   = vvp
 SIM   = sim
 
-.PHONY: all p1 p2 p2_rtl p2_py clean
-all: p1 p2
+.PHONY: all p1 p2 p2_rtl p2_py p3 clean
+all: p1 p2 p3
 
 # ---- Piece 1: bit-sliced digital CIM MAC tile -----------------------------
 p1: $(SIM)/tb_cim_mac_tile.vvp
@@ -25,6 +25,10 @@ p2_rtl: $(SIM)/tb_td_readout.vvp
 
 $(SIM)/tb_td_readout.vvp: rtl/td_readout.v tb/tb_td_readout.v
 	$(IV) -o $@ $^
+
+# ---- Piece 3: detect-then-fire-sparse MLP ---------------------------------
+p3:
+	python3 py/sparse_mlp.py
 
 clean:
 	rm -f $(SIM)/*.vvp $(SIM)/*.vcd

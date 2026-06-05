@@ -27,7 +27,8 @@ claimed beyond that framing.
    integer matmul. ✅ *built & passing.*
 2. **`py/readout_model.py`** + **`rtl/td_readout.v`** — linear time-domain
    readout vs amplitude ADC, head-to-head with non-idealities. ✅ *built & passing.*
-3. Detect-then-fire-sparse MLP (numpy; torch unavailable in this env). *todo*
+3. **`py/sparse_mlp.py`** — detect-then-fire-sparse MLP (numpy; torch
+   unavailable). ✅ *built & passing.*
 4. Per-token energy model (numpy). *todo*
 
 ## Toolchain (verified in this environment)
@@ -39,6 +40,7 @@ claimed beyond that framing.
 ```
 make p1          # piece 1: CIM MAC tile self-check
 make p2          # piece 2: TD-vs-ADC numpy comparison + TD readout RTL self-check
+make p3          # piece 3: detect-then-fire-sparse MLP (trains in numpy, ~1 min)
 ```
 
 ### Piece 1 — measured result
@@ -88,3 +90,28 @@ All magnitudes are **assumptions** from CIM/ADC literature, labeled in
 `py/readout_model.py`; the conclusions are sensitive to them, so the script
 **sweeps** drift (exp. C) and tile width (exp. D) rather than reporting a
 single point.
+
+### Piece 3 — measured result & honest read
+`py/sparse_mlp.py` trains a hidden ReLU layer (numpy, hand-written backprop +
+Adam) on a synthetic teacher-student C-class task with **contextual (clustered)
+inputs**, then tests detect-then-fire. Baseline: ppl=6.71, acc=0.714 (random
+ppl=16), mean fire fraction 0.39.
+
+- **Contextual sparsity is real here:** an ORACLE keeping the top-k neurons by
+  true contribution drops to **25% fire at ppl 7.44 / acc 0.68** (vs 6.71 /
+  0.71 dense) — small loss. Below ~12% fire, quality falls off (acc 0.56).
+- **It is low-rank predictable:** detector recall of the oracle top-128 climbs
+  monotonically with detector rank r: 0.40 (r=4) → 0.63 (r=16) → **0.77
+  (r=32)** → 0.87 (r=128). At **r=32 the detector matches the oracle's quality**
+  (acc 0.680 vs 0.682).
+- **Detector is cheaper than what it skips — up to a point.** At fire_k=128,
+  detector/(saved compute) = 0.19 (r=16), 0.37 (r=32): net compute ~2–2.6×
+  lower. But at r≥128, detector/saved = **1.48** — the detector eats the
+  savings. Clear cost ceiling around r≈32–64.
+- **Honest caveats:** (1) The detector matches the *oracle*; the oracle itself
+  costs ~5% accuracy at 25% fire, so "stays ~baseline" holds only down to
+  ~25–50% fire here. (2) **Synthetic task, not an LLM.** A first cut on
+  *structureless* Gaussian inputs gave detector recall == chance — contextual
+  sparsity needs contextual structure, which we built in deliberately. Whether
+  real-transformer fire-fractions are this predictable is **not proven here**
+  (Deja Vu reports they are, in trained LLMs).
