@@ -29,7 +29,7 @@ def ppl(m,X,Y):
         lg,_=m(X[i:i+1]); tot+=F.cross_entropy(lg.view(-1,lg.size(-1)),Y[i:i+1].view(-1),reduction="sum").item(); ntok+=Y.shape[1]
     return math.exp(tot/ntok)
 def main():
-    ck=torch.load(os.path.join(CK,"ternary.pt"),map_location="cpu",weights_only=False)
+    ck=torch.load(os.environ.get("TERN_CKPT",os.path.join(CK,"ternary.pt")),map_location="cpu",weights_only=False)
     cfg=Config(**ck["cfg"]); m=GPT(cfg); m.load_state_dict(ck["model"]); m.eval()
     T=cfg.block; d=val(); X,Y=chunks(d,T,16)
     print("="*74); print("TERNARY ACTIVATION DATAPATH: readout-precision frontier"); print("="*74)
