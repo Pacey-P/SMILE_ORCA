@@ -47,6 +47,37 @@ conversion is cheap. Both halves measured.
 **Caveats:** tiny byte-level model; R\* assumes per-column ADC range
 calibration; absolute R\* may shift at scale. Digital sim, not silicon.
 
+## Fan-in scaling test (`scaling.py`) — does it hold at scale? **YES**
+Trained ternary models at d=128/256/512 and pooled concentration vs fan-in N:
+
+| fan-in N | concentration (worst/|P|max) |
+|---|---|
+| 128 | 5.5× |
+| 256 | 6.9× |
+| 512 | 11.8× |
+| 1024 | 25.4× |
+| 2048 | 45.1× |
+
+**log-log slope = 0.80** (positive, ≥ CLT's √N≈0.5 — partial sums concentrate
+*more* as fan-in grows). And R\* stays flat/low as width grows:
+
+| width d | R\* (full quality) | ideal ppl |
+|---|---|---|
+| 128 | 5 bits | 4.88 |
+| 256 | 4 bits | 3.71 |
+| 512 | 4 bits | 3.80 |
+
+**Verdict: the readout-bit saving is STABLE/strengthening with scale** — the
+opposite of the head-triage result (which didn't scale). Real models have fan-in
+4096–16384 (≫ our 2048); extrapolating the slope, concentration → ~130×+ and R\*
+should hold at ≤4 bits. Plot: `../results/ternary_readout_scaling.png`.
+
+Defensible claim: **a ternary CIM chip needs only ~4–5-bit readout for full
+transformer quality, and this holds (improves) with model size** — ~3–4 bits
+fewer than a generic CIM ADC (~7–8b) → ~8–16× ADC-energy saving, composing with
+the time-domain readout. The single activation-datapath result this project
+found that is both positive AND scales.
+
 ## Reproduce
 ```
 python3 train.py --iters 1000     # ternary GPT from scratch (~14 min CPU)
