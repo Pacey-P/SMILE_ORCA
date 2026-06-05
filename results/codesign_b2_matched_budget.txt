@@ -1,0 +1,32 @@
+================================================================================
+MATCHED-BUDGET: A=[baseline] bolt-on  vs  B2=[codesign_topk] train-in-the-loop
+A dense ppl = 3.431   B2 dense(fire-all) ppl = 4.224   (B2 is specialized for sparse firing)
+detector rank = 32   H = 1024
+================================================================================
+
+    budget |  A:oracle  A:bolton  A:static  A:random | B2:oracle B2:codes. B2:posthoc B2:static B2:random
+ 256(25.0%) |     3.425     4.053    16.320    15.033 |     4.203     4.180      4.159     4.372    19.793
+ 128(12.5%) |     3.508     5.273    24.114    26.518 |     4.180     4.160      4.189     6.766    26.551
+  64( 6.2%) |     4.185     7.563    24.252    35.726 |     5.507     6.402      7.003    13.014    31.733
+
+[input-dependence @ k=128 (12.5%), true h on VAL]
+  model | layer | fire_frac | Jaccard | always_on | always_off
+     A |   0   |  0.233    |  0.112  |      0    |     13
+     A |   1   |  0.212    |  0.108  |      0    |      1
+     A |   2   |  0.245    |  0.110  |      0    |      4
+     A |   3   |  0.282    |  0.125  |      0    |      7
+    B2 |   0   |  0.127    |  0.519  |      6    |    590
+    B2 |   1   |  0.112    |  0.695  |     46    |    725
+    B2 |   2   |  0.116    |  0.755  |     69    |    762
+    B2 |   3   |  0.136    |  0.771  |     58    |    787
+  oracle-vs-static gap @k=128:
+    A : static 24.114 - oracle 3.508
+    B2: static 6.766 - oracle 4.180
+  recall of oracle top-128: A bolt-on 0.609 | B2 co-trained 0.902
+
+[VERDICT @ 128/1024 = 12.5% budget]
+  co-design beats bolt-on?   B2:codesign 4.160  vs  A:bolt-on 5.273  -> YES (-21.1%)
+  B2 cheap beats B2 static/random?  4.160 vs 6.766/26.551 -> YES
+  B2 input-dependent (not degenerate)? mean Jaccard 0.685 -> YES
+  quality vs full A-dense: B2@128 4.160 vs A-dense 3.431 (+21.2%)
+================================================================================

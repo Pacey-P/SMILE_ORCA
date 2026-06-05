@@ -1,0 +1,61 @@
+==============================================================================
+HEAD-TO-HEAD  A=[baseline] (baseline)  vs  B=[codesign] (co-design)
+rank=32  fit_tokens=30000  fit_steps=1500  val_blocks=64  fracs=[0.5, 0.375, 0.25, 0.125, 0.0625]
+==============================================================================
+
+[1] QUALITY (dense held-out ppl, same val set)
+    A baseline  ppl = 3.431
+    B codesign  ppl = 3.591   (gap +4.7% vs A)
+
+[2] INPUT-DEPENDENCE @ top-256/1024 (25% fire), true h on VAL
+    model | layer | fire_frac | Jaccard | always_on | always_off
+      A   |   0   |  0.233    |  0.207  |      0    |      1
+      A   |   1   |  0.212    |  0.202  |      0    |      0
+      A   |   2   |  0.245    |  0.195  |      0    |      0
+      A   |   3   |  0.282    |  0.208  |      0    |      1
+      B   |   0   |  0.333    |  0.389  |     35    |     16
+      B   |   1   |  0.263    |  0.454  |     75    |     23
+      B   |   2   |  0.257    |  0.466  |     93    |     19
+      B   |   3   |  0.304    |  0.512  |     94    |     34
+    oracle-vs-static gap @25% (bigger => more input-dependent structure):
+      A: static 16.320 - oracle 3.425 = +12.895
+      B: static 11.807 - oracle 3.610 = +8.197
+
+[3] post-hoc detector recall of oracle top-256:
+    A: mean 0.645  (0.64 0.61 0.64 0.69)
+    B: mean 0.797  (0.79 0.78 0.78 0.83)
+    B co-trained detector recall: mean 0.811 (0.82 0.80 0.79 0.84)
+
+[4] SPARSE INFERENCE perplexity (held-out, matched fire budget)
+    A dense ppl = 3.431
+    frac   k   | oracle  detector  static  random
+    0.5000  512 |   3.431    3.507   6.944   6.607
+    0.3750  384 |   3.431    3.659  10.111   9.486
+    0.2500  256 |   3.425    4.053  16.320  15.033
+    0.1250  128 |   3.508    5.273  24.114  26.518
+    0.0625   64 |   4.185    7.563  24.252  35.726
+    B dense ppl = 3.591
+    frac   k   | oracle  detector  static  random  codesign
+    0.5000  512 |   3.591    3.785   6.100  13.853    3.669
+    0.3750  384 |   3.591    4.094   7.970  18.485    3.830
+    0.2500  256 |   3.610    5.049  11.807  24.808    4.366
+    0.1250  128 |   4.227    8.838  17.187  36.610    7.802
+    0.0625   64 |  15.288   31.522  41.343  53.543   33.083
+
+[5] RELATIVE DEGRADATION  (policy_ppl / own-model dense_ppl; 1.00=lossless)
+    frac | A:detector A:static | B:detector B:static B:codesign
+    0.5000 |   1.022     2.024  |   1.054     1.699    1.022
+    0.3750 |   1.066     2.947  |   1.140     2.219    1.066
+    0.2500 |   1.181     4.756  |   1.406     3.288    1.216
+    0.1250 |   1.537     7.028  |   2.461     4.786    2.172
+    0.0625 |   2.204     7.068  |   8.777     11.512    9.212
+
+[6] VERDICT CHECKS
+    (a) B quality close to A (<=+5%)?  YES (+4.7%)
+    (b) B input-dependent (not degenerate)?  YES (oracle-static gap +8.197, mean Jaccard 0.455)
+    (c) frac(s) where A-detector fails (>+5%) but B-detector keeps quality (<=+5%) AND beats static+random: NONE
+    (d) B-detector beats B-static at ALL fracs?  YES
+
+    => CO-DESIGN WIN (all of a,b,c hold)?  NO
+
+wrote /home/user/SMILE_ORCA/codesign/../results/codesign_headtohead.csv

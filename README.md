@@ -17,6 +17,8 @@ Digital simulation of a compute-in-memory (CIM) matmul accelerator with a
 | 2 | Linear TD readout beats ADC at transformer precision | **MIXED, honest:** TD *matches* ADC accuracy bit-for-bit (only jitter costs ~1 bit) and is ~10×–95× cheaper in *readout* energy. But **neither hits 1–2% raw** — gain mismatch floors ~1.6%; needs calibration. Drift hits both equally (fair model). |
 | 3 | Cheap detector predicts FFN sparsity, saves compute | **WORKS w/ caveats:** contextual sparsity is real & low-rank predictable (recall→0.87); detector matches oracle at rank 32 and is cheaper than skipped compute up to r≈32–64. Synthetic task, not an LLM; structureless inputs failed. |
 | 4 | Where does per-token energy go; do 1–3 help | **PROVEN decomposition:** movement = 99.4% (computed). CIM = 11.9×. But **KV cache becomes the bottleneck**, so pieces 2–3 barely move the *system* total at long context — they matter at short context / after KV is fixed. |
+| 5 | KV-cache reduction levers, learned vs heuristic | **HONEST NEGATIVE** (`kv/`): on a real from-scratch GPT, simple levers win — 4-bit quant ⋈ recency window = 14–27× KV reduction; a learned KV-importance **detector LOSES to recency**, evaporation ties within noise. |
+| 6 | MLP-sparsity **co-design** vs bolt-on detector | **MIXED, honest** (`codesign/`): for MLP neurons a bolt-on detector already beats simple baselines (KV lesson does *not* transfer). A soft "be-predictable" regularizer **loses** (no better sparse-inference, +4.7% ppl). **Train-in-the-loop** co-design **wins narrowly** at 12.5% firing (−21% ppl vs bolt-on at equal compute) but only as a *specialized* model (worse dense). |
 
 ## Motivation
 The dominant cost of local LLM inference is **data movement (~98% of energy)**,
